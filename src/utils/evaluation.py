@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+plt.rcParams['font.sans-serif'] = ["Noto Sans CJK JP"]  # 正常显示中文标签
+plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 import seaborn as sns
 import json
 import os
@@ -102,7 +104,8 @@ class Evaluator:
 
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.show()
+        else: 
+            plt.show()
 
 
     def plot_roc_curve(self,
@@ -142,7 +145,8 @@ class Evaluator:
 
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.show()
+        else: 
+            plt.show()
 
     def save_results(self, save_dir: str, prefix: str) -> None:
         os.makedirs(save_dir, exist_ok=True)

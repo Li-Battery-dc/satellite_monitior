@@ -20,10 +20,12 @@ def run_detection(dataset: str, model: str, config: Config):
     data_loader = Dataloader(data_root=config.data_root, data_name=dataset)
     data = data_loader.get_data(dataset)
     
-    X_train = data['X_train']
-    y_train = (data['y_train'] != 0).astype(int)
+    X_train = data['X_train'] 
+    y_train = (data['y_train'] != 0).astype(int) # detection只用2值标签
     X_test = data['X_test']
     y_test = (data['y_test'] != 0).astype(int)
+
+    feature_names = data['feature_names']
     
     output_dir = os.path.join(config.output_dir, 'detection', dataset)
     os.makedirs(output_dir, exist_ok=True)
@@ -46,9 +48,8 @@ def run_detection(dataset: str, model: str, config: Config):
             n_jobs=config.rf.n_jobs,
             class_weight=config.rf.class_weight
         )
-        detector.hyperparameter_tuning(X_train, y_train, param_grid=config.rf.param_grid)
-        
         importance_path = os.path.join(output_dir, f"{model}_feature_importance.png")
+        detector.fit(X_train, y_train, feature_names=feature_names)
         detector.plot_feature_importance(save_path=importance_path)
     
     y_pred = detector.predict(X_test)
@@ -70,6 +71,7 @@ def run_identification(dataset: str, model: str, config: Config):
     data = data_loader.get_data(dataset)
     
     label_map = data['label_map']
+    feature_names = data['feature_names']
     num_classes = len(label_map)
     
     X_train = data['X_train']
@@ -100,8 +102,7 @@ def run_identification(dataset: str, model: str, config: Config):
             n_jobs=config.rf.n_jobs,
             class_weight=config.rf.class_weight
         )
-        identifier.hyperparameter_tuning(X_train, y_train, param_grid=config.rf.param_grid, scoring='accuracy')
-        
+        identifier.fit(X_train, y_train, feature_names=feature_names)
         importance_path = os.path.join(output_dir, f"{model}_feature_importance.png")
         identifier.plot_feature_importance(save_path=importance_path)
     

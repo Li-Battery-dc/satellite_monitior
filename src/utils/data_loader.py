@@ -73,6 +73,9 @@ class Dataloader:
             # 将字符串键转换为整数键
             label_map = {int(k): v for k, v in itoa_data.items()}
 
+        if fault_only:
+            label_map = label_map[1:] # 0标签被移除
+        
         object_features = list(enum_to_object.keys())
         
         data_dict = {

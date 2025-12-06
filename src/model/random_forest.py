@@ -4,6 +4,8 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV
 from typing import Tuple, Optional, Dict, List
 import matplotlib.pyplot as plt
+plt.rcParams['font.sans-serif'] = ["Noto Sans CJK JP"]  # 正常显示中文标签
+plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 
 from utils.evaluation import Evaluator
 
@@ -41,8 +43,7 @@ class RFClassifier:
         self.cv_results = None
 
     def fit(self, X_train: np.ndarray, y_train: np.ndarray,
-            feature_names: Optional[List[str]] = None,
-            use_cv: bool = True, cv_folds: int = 5) -> Dict:
+            feature_names: Optional[List[str]] = None) -> Dict:
         if feature_names is not None:
             self.feature_names = feature_names
         else:
@@ -143,7 +144,8 @@ class RFClassifier:
 
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.show()
+        else: 
+            plt.show()
 
     def hyperparameter_tuning(self, X_train: np.ndarray, y_train: np.ndarray,
                         param_grid: Optional[Dict] = None,

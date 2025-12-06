@@ -1,5 +1,5 @@
 class MLPConfig:
-    hidden_layers = [64, 32]
+    hidden_layers = [256, 128, 64, 32]
     dropout_rate = 0.3
     use_batchNorm = True
     lr = 0.001
