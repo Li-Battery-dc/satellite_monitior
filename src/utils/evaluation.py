@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import json
+import os
 from sklearn.metrics import (
     accuracy_score, confusion_matrix, roc_curve, auc
 )
@@ -48,6 +50,7 @@ class Evaluator:
             results['auc'] = float(roc_auc)
 
         self.results = results
+        self.label_map = label_map
 
     def print_results(self) -> Dict:
         """打印相关信息"""
@@ -77,12 +80,11 @@ class Evaluator:
             save_path: 保存路径（可选）
         """
         cm = self.results['confusion_matrix']
-        label_map = self.label_map
         labels = np.arange(cm.shape[0])
 
         # 确定类别名称
-        if label_map is not None:
-            class_names = [label_map.get(label, f'Class {label}') for label in labels]
+        if self.label_map is not None:
+            class_names = [self.label_map.get(label, f'Class {label}') for label in labels]
         else:
             class_names = [f'Class {label}' for label in labels]
         
@@ -141,3 +143,35 @@ class Evaluator:
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.show()
+
+    def save_results(self, save_dir: str, prefix: str) -> None:
+        os.makedirs(save_dir, exist_ok=True)
+        
+        results_to_save = {
+            'accuracy': self.results.get('accuracy'),
+            'confusion_matrix': self.results['confusion_matrix'].tolist(),
+        }
+        
+        if 'TP' in self.results:
+            results_to_save.update({
+                'TP': self.results['TP'],
+                'TN': self.results['TN'],
+                'FP': self.results['FP'],
+                'FN': self.results['FN'],
+            })
+        
+        if 'auc' in self.results:
+            results_to_save['auc'] = self.results['auc']
+        
+        json_path = os.path.join(save_dir, f"{prefix}_results.json")
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(results_to_save, f, indent=2, ensure_ascii=False)
+        
+        cm_path = os.path.join(save_dir, f"{prefix}_confusion_matrix.png")
+        self.plot_confusion_matrix(save_path=cm_path)
+        
+        if 'auc' in self.results:
+            roc_path = os.path.join(save_dir, f"{prefix}_roc_curve.png")
+            self.plot_roc_curve(save_path=roc_path)
+        
+        print(f"结果已保存到: {save_dir}")

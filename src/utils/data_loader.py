@@ -27,18 +27,21 @@ class Dataloader:
             for name in ['激光载荷', '供配电', '姿轨控']:
                 self.load_data(name)
 
-    def _prepare_features_targets(self, df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
+    def _prepare_features_targets(self, df: pd.DataFrame, fault_only: bool = False) -> Tuple[np.ndarray, np.ndarray]:
         """准备特征和目标变量"""
+        if fault_only:
+            df = df[df['label'] != 0]
         X = df.drop(columns=['label']).values
         y = df['label'].values
         return X, y
 
-    def load_data(self, data_name: str) -> Dict:
+    def load_data(self, data_name: str, fault_only: bool = False) -> Dict:
         """
         加载并处理单个子系统的数据
 
         Args:
             data_name: 子系统名称
+            fault_only: 是否只加载故障样本（用于identification任务）
         Returns:
             data_dict: 用于训练的数据内容
         """
@@ -53,14 +56,23 @@ class Dataloader:
         test_df = pd.read_csv(test_path)
 
         # 提取出标签和特征
-        X_train, y_train = self._prepare_features_targets(train_df)
-        X_test, y_test = self._prepare_features_targets(test_df)
+        X_train, y_train = self._prepare_features_targets(train_df, fault_only)
+        X_test, y_test = self._prepare_features_targets(test_df, fault_only)
 
-        # 获取特征名称, 名义变量映射
+        # 获取特征名称, 名义变量映射, 标签映射
         feature_names = [col for col in train_df.columns if col != 'label']
         with open(os.path.join(base_path, "enum_to_object.json"), 'r') as f:
             enum_to_object = json.load(f)
-        
+
+        # 加载标签映射 (itoa.json)
+        itoa_path = os.path.join(base_path, "itoa.json")
+        label_map = {}
+        if os.path.exists(itoa_path):
+            with open(itoa_path, 'r') as f:
+                itoa_data = json.load(f)
+            # 将字符串键转换为整数键
+            label_map = {int(k): v for k, v in itoa_data.items()}
+
         object_features = list(enum_to_object.keys())
         
         data_dict = {
@@ -71,6 +83,7 @@ class Dataloader:
             'feature_names': feature_names,
             'object_features': object_features,
             'enum_to_object_map': enum_to_object,
+            'label_map': label_map,
             'use_pca': False,
             'data_name': data_name,
             'data_shapes': {
