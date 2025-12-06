@@ -10,7 +10,7 @@ import json
 class Dataloader:
     """数据加载和预处理类"""
 
-    def __init__(self, data_root: str = "data/train", data_name: Optional[str] = None):
+    def __init__(self, data_root: str = "../data/train", data_name: Optional[str] = None):
         """
         初始化数据加载器
 

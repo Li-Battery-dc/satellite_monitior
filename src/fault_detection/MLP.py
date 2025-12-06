@@ -11,8 +11,6 @@ from typing import Tuple, Optional, Dict
 
 import matplotlib.pyplot as plt
 
-from utils.evaluation import calculate_accuracy
-
 
 class MLPNetwork(nn.Module):
     """MLP神经网络"""
@@ -125,7 +123,7 @@ class MLPDetector:
 
     def fit(self, X_train: np.ndarray, y_train: np.ndarray,
             X_val: Optional[np.ndarray] = None, y_val: Optional[np.ndarray] = None,
-            epochs: int = 100, lr: float = 0.001, batch_size: int = 32,
+            epochs: int = 100, batch_size: int = 32,
             verbose: bool = True) -> Dict:
         """
         训练模型
@@ -243,6 +241,26 @@ class MLPDetector:
 
         return predictions.astype(int)
 
+    def predict_prob(self, X: np.ndarray) -> np.ndarray:
+        """
+        输出每个样本属于正类的概率（用于绘制ROC曲线）
+
+        Args:
+            X: 特征数据
+
+        Returns:
+            probabilities: 每个样本属于正类的概率
+        """
+        if not self.is_fitted:
+            raise ValueError("模型尚未训练，请先调用fit方法")
+
+        self.network.eval()
+        with torch.no_grad():
+            X_tensor = torch.FloatTensor(X).to(self.device)
+            logits = self.network(X_tensor)
+            probabilities = torch.sigmoid(logits).cpu().numpy().flatten()
+        return probabilities
+
     def plot_training_history(self, figsize: Tuple[int, int] = (12, 4),
                              save_path: Optional[str] = None) -> None:
         """
@@ -304,39 +322,3 @@ class MLPDetector:
         }
 
         return info
-
-
-if __name__ == "__main__":
-    # 测试MLP模型
-    from sklearn.datasets import make_classification
-    from sklearn.model_selection import train_test_split
-
-    # 生成测试数据
-    X, y = make_classification(n_samples=1000, n_features=20, n_informative=10,
-                             n_redundant=5, n_clusters_per_class=1,
-                             weights=[0.9, 0.1], flip_y=0, random_state=42)
-
-    # 分割数据
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.3, random_state=42, stratify=y
-    )
-
-    # 创建并训练模型
-    mlp = MLPDetector(input_dim=X.shape[1], hidden_layers=[64, 32], seed=42)
-    history = mlp.fit(X_train, y_train, X_test, y_test, epochs=50, verbose=True)
-
-    # 预测
-    y_pred = mlp.predict(X_test)
-
-    # 评估
-    accuracy = calculate_accuracy(y_test, y_pred)
-    print(f"\n测试集准确率: {accuracy:.4f}")
-
-    # 绘制训练历史
-    mlp.plot_training_history()
-
-    # 显示模型信息
-    print("\n模型信息:")
-    info = mlp.get_model_info()
-    for key, value in info.items():
-        print(f"{key}: {value}")
