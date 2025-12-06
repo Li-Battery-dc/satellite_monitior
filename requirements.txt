@@ -1,0 +1,13 @@
+numpy>=1.21
+pandas>=1.3
+scipy>=1.7
+scikit-learn>=1.0
+matplotlib>=3.4
+seaborn>=0.11
+# torch>=1.12
+jupyter>=1.0
+
+# Notes:
+# - `json`, `os`, `argparse`, `sys`, `typing` are part of the Python standard library.
+# - If you need a specific CUDA-enabled `torch`, install it following PyTorch's official instructions
+#   (https://pytorch.org/) rather than via the generic pip `torch` line above.
