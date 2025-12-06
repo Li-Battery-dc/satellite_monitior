@@ -38,6 +38,7 @@ class Evaluator:
         labels = np.sort(labels)
         cm = confusion_matrix(y_true, y_pred, labels=labels)
         results['confusion_matrix'] = cm
+        results['labels'] = labels  # 保存实际的标签值用于绘图
 
         # 二分类时，返回 TP/TN/FP/FN 以及单阈值的 TPR/FPR
         if len(labels) == 2:
@@ -82,7 +83,7 @@ class Evaluator:
             save_path: 保存路径（可选）
         """
         cm = self.results['confusion_matrix']
-        labels = np.arange(cm.shape[0])
+        labels = self.results['labels']  # 使用实际的标签值而非矩阵索引
 
         # 确定类别名称
         if self.label_map is not None:

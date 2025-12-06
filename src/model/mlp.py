@@ -25,22 +25,22 @@ class MLPNetwork(nn.Module):
         layer_dims = [input_dim] + hidden_layers + [output_dim]
 
         for i in range(len(layer_dims) - 1):
+            # 每层前面添加归一化层
+            if use_batch_norm:
+                self.batch_norms.append(nn.BatchNorm1d(layer_dims[i]))
             self.layers.append(nn.Linear(layer_dims[i], layer_dims[i + 1]))
 
-            if i < len(layer_dims) - 2:
-                if use_batch_norm:
-                    self.batch_norms.append(nn.BatchNorm1d(layer_dims[i + 1]))
+            if i < len(layer_dims) - 2:  # 最后一层不加dropout
                 self.dropouts.append(nn.Dropout(dropout_rate))
 
         self.activation = nn.ReLU()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         for i, layer in enumerate(self.layers):
+            x = self.batch_norms[i](x) if self.batch_norms is not None else x
             x = layer(x)
 
-            if i < len(self.layers) - 1:
-                if self.batch_norms is not None:
-                    x = self.batch_norms[i](x)
+            if i < len(self.layers) - 1:  # 最后一层不加激活和dropout
                 x = self.activation(x)
                 x = self.dropouts[i](x)
 
@@ -77,6 +77,7 @@ class MLPClassifier:
         ).to(self.device)
 
         self.optimizer = optim.Adam(self.network.parameters(), lr=lr)
+        self.scheduler = None  # 将在fit时初始化
         
         if num_classes == 2:
             self.criterion = nn.BCEWithLogitsLoss()
@@ -85,6 +86,7 @@ class MLPClassifier:
 
         self.train_losses = []
         self.val_losses = []
+        self.learning_rates = []  # 记录学习率变化
         self.is_fitted = False
 
     def _get_torchloader(self, X: np.ndarray, y: np.ndarray, batch_size: int) -> DataLoader:
@@ -101,6 +103,7 @@ class MLPClassifier:
     def fit(self, X_train: np.ndarray, y_train: np.ndarray,
             X_val: Optional[np.ndarray] = None, y_val: Optional[np.ndarray] = None,
             epochs: int = 100, batch_size: int = 32,
+            use_cosine_annealing: bool = True,eta_min: float = 1e-6,
             verbose: bool = True) -> Dict:
         train_dataloader = self._get_torchloader(X_train, y_train, batch_size)
 
@@ -110,6 +113,15 @@ class MLPClassifier:
 
         self.train_losses = []
         self.val_losses = []
+        self.learning_rates = []
+
+        # 初始化余弦退火学习率调度器
+        if use_cosine_annealing:
+            self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer, T_max=epochs, eta_min=eta_min
+            )
+        else:
+            self.scheduler = None
 
         if verbose:
             print("开始训练MLP模型...")
@@ -118,6 +130,8 @@ class MLPClassifier:
                 print(f"验证样本数: {len(X_val)}")
             output_dim = 1 if self.num_classes == 2 else self.num_classes
             print(f"网络结构: {self.input_dim} -> {' -> '.join(map(str, self.hidden_layers))} -> {output_dim}")
+            if use_cosine_annealing:
+                print(f"学习率调度: 余弦退火, eta_min={eta_min})")
             print("-" * 50)
 
         for epoch in range(epochs):
@@ -139,6 +153,12 @@ class MLPClassifier:
             avg_train_loss = train_loss / len(train_dataloader)
             self.train_losses.append(avg_train_loss)
 
+            # 记录当前学习率并更新调度器
+            current_lr = self.optimizer.param_groups[0]['lr']
+            self.learning_rates.append(current_lr)
+            if self.scheduler is not None:
+                self.scheduler.step()
+
             val_loss = None
             if val_dataloader is not None:
                 self.network.eval()
@@ -158,16 +178,19 @@ class MLPClassifier:
                 if val_loss is not None:
                     print(f"Epoch [{epoch+1}/{epochs}], "
                           f"Train Loss: {avg_train_loss:.6f}, "
-                          f"Val Loss: {val_loss:.6f}")
+                          f"Val Loss: {val_loss:.6f}, "
+                          f"LR: {current_lr:.6f}")
                 else:
                     print(f"Epoch [{epoch+1}/{epochs}], "
-                          f"Train Loss: {avg_train_loss:.6f}")
+                          f"Train Loss: {avg_train_loss:.6f}, "
+                          f"LR: {current_lr:.6f}")
 
         self.is_fitted = True
 
         training_history = {
             'train_losses': self.train_losses,
             'val_losses': self.val_losses,
+            'learning_rates': self.learning_rates,
             'epochs_trained': epoch + 1
         }
 
@@ -264,3 +287,67 @@ class MLPClassifier:
         }
 
         return info
+
+    def save(self, save_path: str) -> None:
+        """保存模型参数和配置到指定路径
+        
+        Args:
+            save_path: 模型保存路径 (.pth 文件)
+        """
+        if not self.is_fitted:
+            raise ValueError("模型尚未训练，无法保存")
+        
+        checkpoint = {
+            'network_state_dict': self.network.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'input_dim': self.input_dim,
+            'num_classes': self.num_classes,
+            'hidden_layers': self.hidden_layers,
+            'dropout_rate': self.dropout_rate,
+            'use_batchNorm': self.use_batchNorm,
+            'lr': self.lr,
+            'seed': self.seed,
+            'train_losses': self.train_losses,
+            'val_losses': self.val_losses,
+            'learning_rates': self.learning_rates,
+            'is_fitted': self.is_fitted
+        }
+        
+        torch.save(checkpoint, save_path)
+        print(f"模型已保存至: {save_path}")
+
+    @classmethod
+    def load(cls, load_path: str) -> 'MLPClassifier':
+        """从指定路径加载模型
+        
+        Args:
+            load_path: 模型文件路径 (.pth 文件)
+            
+        Returns:
+            加载好的 MLPClassifier 实例
+        """
+        checkpoint = torch.load(load_path, map_location='cpu')
+        
+        # 使用保存的配置创建新实例
+        model = cls(
+            input_dim=checkpoint['input_dim'],
+            num_classes=checkpoint['num_classes'],
+            hidden_layers=checkpoint['hidden_layers'],
+            dropout_rate=checkpoint['dropout_rate'],
+            use_batchNorm=checkpoint['use_batchNorm'],
+            lr=checkpoint['lr'],
+            seed=checkpoint['seed']
+        )
+        
+        # 加载网络权重和优化器状态
+        model.network.load_state_dict(checkpoint['network_state_dict'])
+        model.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        
+        # 恢复训练历史
+        model.train_losses = checkpoint.get('train_losses', [])
+        model.val_losses = checkpoint.get('val_losses', [])
+        model.learning_rates = checkpoint.get('learning_rates', [])
+        model.is_fitted = checkpoint.get('is_fitted', True)
+        
+        print(f"模型已从 {load_path} 加载")
+        return model
