@@ -1,14 +1,13 @@
 #!/bin/bash
 
 # 训练所有模型脚本
-# MLP: 训练模式
-# RF/XGB: 超参数调优模式
+# MLP: 带train参数
+# RF/XGB: 超参数调优模式， 带tune参数
 
 cd "$(dirname "$0")/.."
 
 DATASETS=("激光载荷" "供配电" "姿轨控")
-# MODELS=("rf" "mlp" "xgb")
-MODELS=("xgb")
+MODELS=("rf" "mlp" "xgb")
 TASKS=("detection" "identification")
 
 for task in "${TASKS[@]}"; do

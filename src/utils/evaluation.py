@@ -26,6 +26,7 @@ class Evaluator:
             - accuracy: 准确率
             - confusion_matrix: 混淆矩阵
             - TP, TN, FP, FN (二分类时)
+            - 虚警率, 漏警率 (二分类时)
             - 若提供 y_proba: fpr, tpr, auc
         """
         results: Dict = {}
@@ -44,7 +45,8 @@ class Evaluator:
         if len(labels) == 2:
             tn, fp, fn, tp = cm.ravel()
             results.update({'TP': int(tp), 'TN': int(tn), 'FP': int(fp), 'FN': int(fn)})
-
+            results['虚警率'] = float(fp / (fp + tn)) if (fp + tn) > 0 else None
+            results['漏警率'] = float(fn / (fn + tp)) if (fn + tp) > 0 else None
             # 若提供了概率，则计算完整 ROC 与 AUC
             fpr, tpr, _ = roc_curve(y_true, y_proba)
             roc_auc = auc(fpr, tpr)
@@ -62,6 +64,8 @@ class Evaluator:
 
         if 'TP' in self.results:
             print(f"TP: {self.results['TP']}, TN: {self.results['TN']}, FP: {self.results['FP']}, FN: {self.results['FN']}")
+            print(f"虚警率: {self.results.get('虚警率', None)}")
+            print(f"漏警率: {self.results.get('漏警率', None)}")
 
         if 'auc' in self.results and self.results['auc'] is not None:
             print(f"AUC: {self.results['auc']}")
@@ -149,7 +153,7 @@ class Evaluator:
         else: 
             plt.show()
 
-    def save_results(self, save_dir: str, prefix: str) -> None:
+    def save_results(self, save_dir: str) -> None:
         os.makedirs(save_dir, exist_ok=True)
         
         results_to_save = {
@@ -163,20 +167,22 @@ class Evaluator:
                 'TN': self.results['TN'],
                 'FP': self.results['FP'],
                 'FN': self.results['FN'],
+                '虚警率': self.results.get('虚警率'),
+                '漏警率': self.results.get('漏警率'),
             })
         
         if 'auc' in self.results:
             results_to_save['auc'] = self.results['auc']
         
-        json_path = os.path.join(save_dir, f"{prefix}_results.json")
+        json_path = os.path.join(save_dir, "results.json")
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(results_to_save, f, indent=2, ensure_ascii=False)
         
-        cm_path = os.path.join(save_dir, f"{prefix}_confusion_matrix.png")
+        cm_path = os.path.join(save_dir, "confusion_matrix.png")
         self.plot_confusion_matrix(save_path=cm_path)
         
         if 'auc' in self.results:
-            roc_path = os.path.join(save_dir, f"{prefix}_roc_curve.png")
+            roc_path = os.path.join(save_dir, "roc_curve.png")
             self.plot_roc_curve(save_path=roc_path)
         
         print(f"结果已保存到: {save_dir}")

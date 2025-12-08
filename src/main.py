@@ -14,13 +14,26 @@ from utils.data_loader import Dataloader
 from utils.evaluation import Evaluator
 from config import Config
 
+import time
 
 def get_model_dir(config: Config, task: str, dataset: str, model: str) -> str:
     """获取模型保存/加载目录
+    使用时间戳标记结果
     
     目录结构: result/{task}/{model}/{dataset}/
     """
-    return os.path.join(config.output_dir, task, model, dataset)
+    return os.path.join(config.result_dir, task, model, dataset)
+
+def get_params_save_dir(config: Config, task: str, dataset: str, model: str) -> str:
+    """获取用于保存参数的目录（写操作使用此目录）"""
+    base = getattr(config, 'params_save_dir', 'params')
+    return os.path.join(base, task, model, dataset)
+
+
+def get_params_load_dir(config: Config, task: str, dataset: str, model: str) -> str:
+    """获取用于加载参数的目录（读操作使用此目录）"""
+    base = getattr(config, 'params_load_dir', 'params')
+    return os.path.join(base, task, model, dataset)
 
 
 def run_detection(dataset: str, model: str, config: Config, train: bool = True, tune: bool = False):
@@ -29,7 +42,7 @@ def run_detection(dataset: str, model: str, config: Config, train: bool = True, 
     print(f"模式: {'训练' if train else '评测'}" + (f" | 超参数调优: {'是' if tune else '否'}" if model in ['rf', 'xgb'] else ""))
     print(f"{'='*50}")
     
-    data_loader = Dataloader(data_root=config.data_root, data_name=dataset)
+    data_loader = Dataloader(data_root=config.data_root, data_name=dataset, split_mode=config.split_mode)
     data = data_loader.get_data(dataset)
     
     X_train = data['X_train'] 
@@ -44,10 +57,15 @@ def run_detection(dataset: str, model: str, config: Config, train: bool = True, 
     os.makedirs(output_dir, exist_ok=True)
     
     if model == 'mlp':
-        model_path = os.path.join(output_dir, 'model.pth')
-        
+        # MLP 模型文件放在 params 目录下（仅在 --train 时写入）
+        params_save_dir = get_params_save_dir(config, 'detection', dataset, model)
+        params_load_dir = get_params_load_dir(config, 'detection', dataset, model)
+        model_path_save = os.path.join(params_save_dir, 'model.pth')
+        model_path_load = os.path.join(params_load_dir, 'model.pth')
+
         if train:
-            # 训练模式
+            # 训练模式：创建 params 保存目录并保存模型
+            os.makedirs(params_save_dir, exist_ok=True)
             detector = MLPDetector(
                 input_dim=X_train.shape[1],
                 hidden_layers=config.mlp.hidden_layers,
@@ -63,18 +81,22 @@ def run_detection(dataset: str, model: str, config: Config, train: bool = True, 
                 use_cosine_annealing=config.mlp.use_cosine_annealing,
                 eta_min=config.mlp.eta_min
             )
-            detector.save(model_path)
+            detector.save(model_path_save)
         else:
-            # 评测模式：加载已保存的模型
-            if not os.path.exists(model_path):
-                raise FileNotFoundError(f"模型文件不存在: {model_path}，请先使用 --train 训练模型")
-            detector = MLPDetector.load(model_path)
+            # 评测模式：从 params 加载目录加载已保存的模型（不创建目录）
+            if not os.path.exists(model_path_load):
+                raise FileNotFoundError(f"模型文件不存在: {model_path_load}，请先使用 --train 训练模型")
+            detector = MLPDetector.load(model_path_load)
     elif model == 'rf':
-        # 随机森林
-        best_params_path = os.path.join(output_dir, 'best_params.json')
-        
+        # 随机森林：best_params.json 放在 params 目录下（仅在 --tune 时写入）
+        params_save_dir = get_params_save_dir(config, 'detection', dataset, model)
+        params_load_dir = get_params_load_dir(config, 'detection', dataset, model)
+        best_params_path_save = os.path.join(params_save_dir, 'best_params.json')
+        best_params_path_load = os.path.join(params_load_dir, 'best_params.json')
+
         if tune:
-            # 超参数调优模式：使用GridSearchCV寻找最佳参数
+            # 超参数调优模式：使用GridSearchCV寻找最佳参数并保存到 params
+            os.makedirs(params_save_dir, exist_ok=True)
             detector = RandomForestDetector(
                 seed=config.rf.seed,
                 n_jobs=config.rf.n_jobs,
@@ -87,19 +109,19 @@ def run_detection(dataset: str, model: str, config: Config, train: bool = True, 
                 scoring='f1'
             )
             detector.feature_names = feature_names
-            # 保存最佳参数
-            with open(best_params_path, 'w', encoding='utf-8') as f:
+            # 保存最佳参数到 params 目录
+            with open(best_params_path_save, 'w', encoding='utf-8') as f:
                 json.dump(tuning_results['best_params'], f, indent=2, ensure_ascii=False)
-            print(f"最佳参数已保存至: {best_params_path}")
+            print(f"最佳参数已保存至: {best_params_path_save}")
         else:
-            # 非调优模式：加载best_params.json并使用最佳参数训练
-            if not os.path.exists(best_params_path):
-                raise FileNotFoundError(f"参数文件不存在: {best_params_path}，请先使用 --tune 进行超参数调优")
-            
-            with open(best_params_path, 'r', encoding='utf-8') as f:
+            # 非调优模式：从 params 目录加载best_params.json并使用最佳参数训练
+            if not os.path.exists(best_params_path_load):
+                raise FileNotFoundError(f"参数文件不存在: {best_params_path_load}，请先使用 --tune 进行超参数调优")
+
+            with open(best_params_path_load, 'r', encoding='utf-8') as f:
                 best_params = json.load(f)
             print(f"已加载最佳参数: {best_params}")
-            
+
             detector = RandomForestDetector(
                 n_estimators=best_params.get('n_estimators', 100),
                 max_depth=best_params.get('max_depth', None),
@@ -111,16 +133,21 @@ def run_detection(dataset: str, model: str, config: Config, train: bool = True, 
                 class_weight=config.rf.class_weight
             )
             detector.fit(X_train, y_train, feature_names=feature_names)
-        
+
         # 保存特征重要性图
         importance_path = os.path.join(output_dir, 'feature_importance.png')
         detector.plot_feature_importance(save_path=importance_path)
     else:
-        # XGBoost
-        best_params_path = os.path.join(output_dir, 'best_params.json')
-        
+        # XGBoost: best_params.json 放在 params 目录下（仅在 --tune 时写入）
+        params_save_dir = get_params_save_dir(config, 'detection', dataset, model)
+        params_load_dir = get_params_load_dir(config, 'detection', dataset, model)
+        best_params_path_save = os.path.join(params_save_dir, 'best_params.json')
+        best_params_path_load = os.path.join(params_load_dir, 'best_params.json')
+
         if tune:
-            # 超参数调优模式
+            # 超参数调优模式：创建 params 保存目录并保存最佳参数
+            os.makedirs(params_save_dir, exist_ok=True)
+
             detector = XGBoostDetector(
                 seed=config.xgb.seed,
                 n_jobs=config.xgb.n_jobs,
@@ -134,19 +161,19 @@ def run_detection(dataset: str, model: str, config: Config, train: bool = True, 
                 auto_balance=True
             )
             detector.feature_names = feature_names
-            # 保存最佳参数
-            with open(best_params_path, 'w', encoding='utf-8') as f:
+            # 保存最佳参数到 params 目录
+            with open(best_params_path_save, 'w', encoding='utf-8') as f:
                 json.dump(tuning_results['best_params'], f, indent=2, ensure_ascii=False)
-            print(f"最佳参数已保存至: {best_params_path}")
+            print(f"最佳参数已保存至: {best_params_path_save}")
         else:
-            # 非调优模式：加载best_params.json并使用最佳参数训练
-            if not os.path.exists(best_params_path):
-                raise FileNotFoundError(f"参数文件不存在: {best_params_path}，请先使用 --tune 进行超参数调优")
-            
-            with open(best_params_path, 'r', encoding='utf-8') as f:
+            # 非调优模式：从 params 加载目录加载best_params.json并使用最佳参数训练
+            if not os.path.exists(best_params_path_load):
+                raise FileNotFoundError(f"参数文件不存在: {best_params_path_load}，请先使用 --tune 进行超参数调优")
+
+            with open(best_params_path_load, 'r', encoding='utf-8') as f:
                 best_params = json.load(f)
             print(f"已加载最佳参数: {best_params}")
-            
+
             detector = XGBoostDetector(
                 n_estimators=best_params.get('n_estimators', 100),
                 max_depth=best_params.get('max_depth', 6),
@@ -159,8 +186,8 @@ def run_detection(dataset: str, model: str, config: Config, train: bool = True, 
                 use_gpu=config.xgb.use_gpu
             )
             detector.fit(X_train, y_train, feature_names=feature_names, auto_balance=True)
-        
-        # 保存特征重要性图
+
+        # 保存特征重要性图（结果目录）
         importance_path = os.path.join(output_dir, 'feature_importance.png')
         detector.plot_feature_importance(save_path=importance_path)
     
@@ -171,7 +198,7 @@ def run_detection(dataset: str, model: str, config: Config, train: bool = True, 
     label_map = {0: '正常', 1: '故障'}
     evaluator = Evaluator(y_test, y_pred, y_prob, label_map)
     evaluator.print_results()
-    evaluator.save_results(output_dir, 'results')
+    evaluator.save_results(output_dir)
 
 
 def run_identification(dataset: str, model: str, config: Config, train: bool = True, tune: bool = False):
@@ -180,7 +207,7 @@ def run_identification(dataset: str, model: str, config: Config, train: bool = T
     print(f"模式: {'训练' if train else '评测'}" + (f" | 超参数调优: {'是' if tune else '否'}" if model in ['rf', 'xgb'] else ""))
     print(f"{'='*50}")
     
-    data_loader = Dataloader(data_root=config.data_root, data_name=dataset)
+    data_loader = Dataloader(data_root=config.data_root, data_name=dataset, split_mode=config.split_mode)
     data_loader.load_data(dataset, fault_only=True)
     data = data_loader.get_data(dataset)
     
@@ -193,15 +220,20 @@ def run_identification(dataset: str, model: str, config: Config, train: bool = T
     X_test = data['X_test']
     y_test = data['y_test']
     
-    # 模型保存目录: result/identification/{model}/{dataset}/
     output_dir = get_model_dir(config, 'identification', dataset, model)
     os.makedirs(output_dir, exist_ok=True)
     
     if model == 'mlp':
-        model_path = os.path.join(output_dir, 'model.pth')
-        
+        # MLP 模型文件放在 params 目录下（仅在 --train 时写入）
+        params_save_dir = get_params_save_dir(config, 'identification', dataset, model)
+        params_load_dir = get_params_load_dir(config, 'identification', dataset, model)
+        model_path_save = os.path.join(params_save_dir, 'model.pth')
+        model_path_load = os.path.join(params_load_dir, 'model.pth')
+
         if train:
-            # 训练模式
+            # 训练模式：创建 params 保存目录并保存模型
+            os.makedirs(params_save_dir, exist_ok=True)
+
             identifier = MLPIdentifier(
                 input_dim=X_train.shape[1],
                 num_classes=num_classes,
@@ -218,18 +250,22 @@ def run_identification(dataset: str, model: str, config: Config, train: bool = T
                 use_cosine_annealing=config.mlp.use_cosine_annealing,
                 eta_min=config.mlp.eta_min
             )
-            identifier.save(model_path)
+            identifier.save(model_path_save)
         else:
-            # 评测模式：加载已保存的模型
-            if not os.path.exists(model_path):
-                raise FileNotFoundError(f"模型文件不存在: {model_path}，请先使用 --train 训练模型")
-            identifier = MLPIdentifier.load(model_path)
+            # 评测模式：从 params 加载目录加载已保存的模型（不创建目录）
+            if not os.path.exists(model_path_load):
+                raise FileNotFoundError(f"模型文件不存在: {model_path_load}，请先使用 --train 训练模型")
+            identifier = MLPIdentifier.load(model_path_load)
     elif model == 'rf':
-        # 随机森林
-        best_params_path = os.path.join(output_dir, 'best_params.json')
-        
+        # 随机森林：best_params.json 放在 params 目录下（仅在 --tune 时写入）
+        params_save_dir = get_params_save_dir(config, 'identification', dataset, model)
+        params_load_dir = get_params_load_dir(config, 'identification', dataset, model)
+        best_params_path_save = os.path.join(params_save_dir, 'best_params.json')
+        best_params_path_load = os.path.join(params_load_dir, 'best_params.json')
+
         if tune:
-            # 超参数调优模式：使用GridSearchCV寻找最佳参数
+            # 超参数调优模式：创建 params 保存目录并保存最佳参数
+            os.makedirs(params_save_dir, exist_ok=True)
             identifier = RandomForestIdentifier(
                 num_classes=num_classes,
                 seed=config.rf.seed,
@@ -243,19 +279,19 @@ def run_identification(dataset: str, model: str, config: Config, train: bool = T
                 scoring='accuracy'  # 多分类任务使用accuracy
             )
             identifier.feature_names = feature_names
-            # 保存最佳参数
-            with open(best_params_path, 'w', encoding='utf-8') as f:
+            # 保存最佳参数到 params 目录
+            with open(best_params_path_save, 'w', encoding='utf-8') as f:
                 json.dump(tuning_results['best_params'], f, indent=2, ensure_ascii=False)
-            print(f"最佳参数已保存至: {best_params_path}")
+            print(f"最佳参数已保存至: {best_params_path_save}")
         else:
-            # 非调优模式：加载best_params.json并使用最佳参数训练
-            if not os.path.exists(best_params_path):
-                raise FileNotFoundError(f"参数文件不存在: {best_params_path}，请先使用 --tune 进行超参数调优")
-            
-            with open(best_params_path, 'r', encoding='utf-8') as f:
+            # 非调优模式：从 params 目录加载best_params.json并使用最佳参数训练
+            if not os.path.exists(best_params_path_load):
+                raise FileNotFoundError(f"参数文件不存在: {best_params_path_load}，请先使用 --tune 进行超参数调优")
+
+            with open(best_params_path_load, 'r', encoding='utf-8') as f:
                 best_params = json.load(f)
             print(f"已加载最佳参数: {best_params}")
-            
+
             identifier = RandomForestIdentifier(
                 num_classes=num_classes,
                 n_estimators=best_params.get('n_estimators', 100),
@@ -268,16 +304,20 @@ def run_identification(dataset: str, model: str, config: Config, train: bool = T
                 class_weight=config.rf.class_weight
             )
             identifier.fit(X_train, y_train, feature_names=feature_names)
-        
-        # 保存特征重要性图
+
+        # 保存特征重要性图（结果目录）
         importance_path = os.path.join(output_dir, 'feature_importance.png')
         identifier.plot_feature_importance(save_path=importance_path)
     else:
-        # XGBoost
-        best_params_path = os.path.join(output_dir, 'best_params.json')
-        
+        # XGBoost：best_params.json 放在 params 目录下（仅在 --tune 时写入）
+        params_save_dir = get_params_save_dir(config, 'identification', dataset, model)
+        params_load_dir = get_params_load_dir(config, 'identification', dataset, model)
+        best_params_path_save = os.path.join(params_save_dir, 'best_params.json')
+        best_params_path_load = os.path.join(params_load_dir, 'best_params.json')
+
         if tune:
-            # 超参数调优模式
+            # 超参数调优模式：创建 params 保存目录并保存最佳参数
+            os.makedirs(params_save_dir, exist_ok=True)
             identifier = XGBoostIdentifier(
                 num_classes=num_classes,
                 seed=config.xgb.seed,
@@ -292,19 +332,19 @@ def run_identification(dataset: str, model: str, config: Config, train: bool = T
                 auto_balance=False  # 多分类不使用
             )
             identifier.feature_names = feature_names
-            # 保存最佳参数
-            with open(best_params_path, 'w', encoding='utf-8') as f:
+            # 保存最佳参数到 params 目录
+            with open(best_params_path_save, 'w', encoding='utf-8') as f:
                 json.dump(tuning_results['best_params'], f, indent=2, ensure_ascii=False)
-            print(f"最佳参数已保存至: {best_params_path}")
+            print(f"最佳参数已保存至: {best_params_path_save}")
         else:
-            # 非调优模式：加载best_params.json并使用最佳参数训练
-            if not os.path.exists(best_params_path):
-                raise FileNotFoundError(f"参数文件不存在: {best_params_path}，请先使用 --tune 进行超参数调优")
-            
-            with open(best_params_path, 'r', encoding='utf-8') as f:
+            # 非调优模式：从 params 加载目录加载best_params.json并使用最佳参数训练
+            if not os.path.exists(best_params_path_load):
+                raise FileNotFoundError(f"参数文件不存在: {best_params_path_load}，请先使用 --tune 进行超参数调优")
+
+            with open(best_params_path_load, 'r', encoding='utf-8') as f:
                 best_params = json.load(f)
             print(f"已加载最佳参数: {best_params}")
-            
+
             identifier = XGBoostIdentifier(
                 num_classes=num_classes,
                 n_estimators=best_params.get('n_estimators', 100),
@@ -328,7 +368,7 @@ def run_identification(dataset: str, model: str, config: Config, train: bool = T
     
     evaluator = Evaluator(y_test, y_pred, None, label_map)
     evaluator.print_results()
-    evaluator.save_results(output_dir, 'results')
+    evaluator.save_results(output_dir)
 
 
 def main():
@@ -352,7 +392,7 @@ def main():
         print("警告: --tune 参数仅对 rf 和 xgb 模型有效")
     if args.train and args.model != 'mlp':
         print("警告: --train 参数仅对MLP模型有效，rf/xgb请使用 --tune")
-    
+
     if args.task == 'detection':
         run_detection(args.dataset, args.model, config, args.train, args.tune)
     else:

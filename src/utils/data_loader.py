@@ -10,15 +10,19 @@ import json
 class Dataloader:
     """数据加载和预处理类"""
 
-    def __init__(self, data_root: str = "../data/train", data_name: Optional[str] = None):
+    def __init__(self, data_root: str = "../data", data_name: Optional[str] = None, split_mode: str = "file"):
         """
         初始化数据加载器
 
         Args:
             data_root: 数据根目录
             data_name: 子系统名称，如果为None则加载所有子系统
+            split_mode: 数据划分模式
+                - 'file': 从 data_root/train/{dataset}/processed_train.csv 和 processed_test.csv 加载
+                - 'dir': 从 data_root/train/{dataset}/processed_all.csv 和 data_root/test/{dataset}/processed_all.csv 加载
         """
         self.data_root = data_root
+        self.split_mode = split_mode
         self.data = {}
 
         if data_name:
@@ -46,11 +50,19 @@ class Dataloader:
             data_dict: 用于训练的数据内容
         """
 
-        # 加载数据
-        base_path = os.path.join(self.data_root, data_name)
-
-        train_path = os.path.join(base_path, "processed_train.csv")
-        test_path = os.path.join(base_path, "processed_test.csv")
+        # 根据 split_mode 加载数据
+        if self.split_mode == "file":
+            # file 模式：从 train 目录下的 processed_train.csv 和 processed_test.csv 加载
+            base_path = os.path.join(self.data_root, "train", data_name)
+            train_path = os.path.join(base_path, "processed_train.csv")
+            test_path = os.path.join(base_path, "processed_test.csv")
+        elif self.split_mode == "dir":
+            # dir 模式：从 train/processed_all.csv 和 test/processed_all.csv 加载
+            base_path = os.path.join(self.data_root, "train", data_name)  # 用于加载映射文件
+            train_path = os.path.join(self.data_root, "train", data_name, "processed_all.csv")
+            test_path = os.path.join(self.data_root, "test", data_name, "processed_all.csv")
+        else:
+            raise ValueError(f"不支持的 split_mode: {self.split_mode}，请使用 'file' 或 'dir'")
 
         train_df = pd.read_csv(train_path)
         test_df = pd.read_csv(test_path)
@@ -179,13 +191,13 @@ use_PCA: {data['use_pca']}
 
 if __name__ == "__main__":
     # 测试数据加载器类
-    print("测试单个数据集加载...")
-    loader1 = Dataloader(data_name='激光载荷')
+    print("测试 file 模式加载单个数据集...")
+    loader1 = Dataloader(data_root='../data', data_name='激光载荷', split_mode='file')
     data1 = loader1.get_data('激光载荷')
     print(f"加载成功: {data1['X_train'].shape}")
 
-    print("\n测试所有数据集加载...")
-    loader2 = Dataloader()
+    print("\n测试 dir 模式加载所有数据集...")
+    loader2 = Dataloader(data_root='../data', split_mode='dir')
     loader2.print_all_info()
 
     print("\n测试PCA..")

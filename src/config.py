@@ -29,7 +29,7 @@ class RFConfig:
 class XGBConfig:
     # 以下参数不在param_grid中，需要手动指定
     seed = 42
-    n_jobs = 1 # GPU 使用时设置为1更合理。
+    n_jobs = 1 # GPU 使用时要设置为1。
     use_gpu = True
     
     # 超参数搜索空间
@@ -49,5 +49,8 @@ class Config:
     xgb = XGBConfig()
     
     datasets = ['激光载荷', '供配电', '姿轨控']
-    data_root = './data/train'
-    output_dir = './result'
+    data_root = './data/'
+    split_mode = 'file'  # 'file' 或 'dir'
+    result_dir = './result_12_8'  # 保存结果的根目录
+    params_save_dir = './params' # 保存参数搜索和模型训练的结果
+    params_load_dir = './params_12_8'
