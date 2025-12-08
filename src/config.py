@@ -18,10 +18,10 @@ class RFConfig:
     
     # 超参数搜索空间
     param_grid = {
-        'n_estimators': [50, 100, 200],
+        'n_estimators': [100, 200, 300],
         'max_depth': [None, 10, 20],
         'min_samples_split': [1, 5, 10],
-        'min_samples_leaf': [3, 5, 10],
+        'min_samples_leaf': [1, 3, 5, 10],
         'max_features': ['sqrt', 'log2', 0.3, 0.5]
     }
 
@@ -29,7 +29,7 @@ class RFConfig:
 class XGBConfig:
     # 以下参数不在param_grid中，需要手动指定
     seed = 42
-    n_jobs = 16
+    n_jobs = 1 # GPU 使用时设置为1更合理。
     use_gpu = True
     
     # 超参数搜索空间
