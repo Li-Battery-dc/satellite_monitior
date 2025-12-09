@@ -2,5 +2,7 @@
 /.claude
 __pycache__/
 /result*
-!/result_csv
+!/result_best
+!/result_one_vs_one
 /params*
+!/params_best
