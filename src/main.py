@@ -314,7 +314,13 @@ def run_identification(dataset: str, model: str, config: Config, train: bool = T
         params_load_dir = get_params_load_dir(config, 'identification', dataset, model)
         best_params_path_save = os.path.join(params_save_dir, 'best_params.json')
         best_params_path_load = os.path.join(params_load_dir, 'best_params.json')
-
+        confused_pair = getattr(config.xgb, 'confused_pair', None)
+       
+        # 做一次one vs one 的尝试
+        if dataset == '供配电':
+            c1, c2 = confused_pair
+            confused_pair = (c1 - 1, c2 - 1)  # 标签从0开始
+    
         if tune:
             # 超参数调优模式：创建 params 保存目录并保存最佳参数
             os.makedirs(params_save_dir, exist_ok=True)
@@ -347,6 +353,7 @@ def run_identification(dataset: str, model: str, config: Config, train: bool = T
 
             identifier = XGBoostIdentifier(
                 num_classes=num_classes,
+                confused_pair=confused_pair,
                 n_estimators=best_params.get('n_estimators', 100),
                 max_depth=best_params.get('max_depth', 6),
                 learning_rate=best_params.get('learning_rate', 0.1),

@@ -31,6 +31,8 @@ class XGBConfig:
     seed = 42
     n_jobs = 1 # GPU 使用时要设置为1。
     use_gpu = True
+
+    confused_pair = (9, 15)  # 供配电： 单体电池短路vs蓄电池组加热带误通
     
     # 超参数搜索空间
     param_grid = {
@@ -51,6 +53,6 @@ class Config:
     datasets = ['激光载荷', '供配电', '姿轨控']
     data_root = './data/'
     split_mode = 'file'  # 'file' 或 'dir'
-    result_dir = './result_12_8'  # 保存结果的根目录
+    result_dir = './result_one_vs_one'  # 保存结果的根目录
     params_save_dir = './params' # 保存参数搜索和模型训练的结果
     params_load_dir = './params_12_8'

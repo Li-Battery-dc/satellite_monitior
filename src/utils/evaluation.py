@@ -13,7 +13,7 @@ from typing import Dict, Optional, Tuple, Union, List
 
 class Evaluator:
    
-    def __init__(self, y_true: np.ndarray, y_pred: np.ndarray, y_proba: np.ndarray ,
+    def __init__(self, y_true: np.ndarray, y_pred: np.ndarray, y_proba: Optional[np.ndarray] = None,
                     label_map: Optional[Dict[int, str]] = None) -> Dict:
         """
         Args:
@@ -48,7 +48,8 @@ class Evaluator:
             results['虚警率'] = float(fp / (fp + tn)) if (fp + tn) > 0 else None
             results['漏警率'] = float(fn / (fn + tp)) if (fn + tp) > 0 else None
             # 若提供了概率，则计算完整 ROC 与 AUC
-            fpr, tpr, _ = roc_curve(y_true, y_proba)
+            if y_proba is not None:
+                fpr, tpr, _ = roc_curve(y_true, y_proba)
             roc_auc = auc(fpr, tpr)
             results['fpr'] = fpr
             results['tpr'] = tpr
