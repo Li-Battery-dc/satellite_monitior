@@ -314,12 +314,36 @@ def run_identification(dataset: str, model: str, config: Config, train: bool = T
         params_load_dir = get_params_load_dir(config, 'identification', dataset, model)
         best_params_path_save = os.path.join(params_save_dir, 'best_params.json')
         best_params_path_load = os.path.join(params_load_dir, 'best_params.json')
-        confused_pair = getattr(config.xgb, 'confused_pair', None)
+        confused_pairs = getattr(config.xgb, 'confused_pairs', None)
        
-        # 做一次one vs one 的尝试
+        # 做one vs one 的尝试, 参数保存到了文件中，但是这里没有调整代码结构直接硬编码进来
         if dataset == '供配电':
-            c1, c2 = confused_pair
+            c1, c2 = confused_pairs[0]
             confused_pair = (c1 - 1, c2 - 1)  # 标签从0开始
+            refiner_params = {
+                "colsample_bytree": 1.0,
+                "learning_rate": 0.06,
+                "max_depth": 9,
+                "min_child_weight": 3,
+                "n_estimators": 500,
+                "reg_lambda": 1,
+                "subsample": 1.0
+            }
+        elif dataset == '姿轨控':
+            c1, c2 = confused_pairs[1]
+            confused_pair = (c1 - 1, c2 - 1)  # 标签从0开始
+            refiner_params= {
+                "colsample_bytree": 0.8,
+                "learning_rate": 0.03,
+                "max_depth": 3,
+                "min_child_weight": 6,
+                "n_estimators": 60,
+                "reg_lambda": 7,
+                "subsample": 0.6
+            }
+        else:
+            confused_pair = None
+            refiner_params = None
     
         if tune:
             # 超参数调优模式：创建 params 保存目录并保存最佳参数
@@ -354,6 +378,7 @@ def run_identification(dataset: str, model: str, config: Config, train: bool = T
             identifier = XGBoostIdentifier(
                 num_classes=num_classes,
                 confused_pair=confused_pair,
+                refiner_params=refiner_params,
                 n_estimators=best_params.get('n_estimators', 100),
                 max_depth=best_params.get('max_depth', 6),
                 learning_rate=best_params.get('learning_rate', 0.1),

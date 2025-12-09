@@ -15,7 +15,7 @@ class XGBoostIdentifier(XGBClassifier):
         Args:
             num_classes: 类别总数
             confused_pair: 一个元组 (class_A, class_B)，指定需要单独处理的两个混淆类别ID
-            refiner_params: 专门用于精修模型的参数字典（可选，默认沿用主模型参数）
+            refiner_params: 专门用于精修模型的参数字典
             **kwargs: 传递给父类的参数
         """
         super().__init__(num_classes=num_classes, **kwargs)
@@ -23,11 +23,6 @@ class XGBoostIdentifier(XGBClassifier):
         self.confused_pair = confused_pair
         self.refiner_model = None
         self.refiner_params = refiner_params if refiner_params else kwargs
-        
-        # 确保精修模型是二分类逻辑
-        self.refiner_params = self.refiner_params.copy()
-        self.refiner_params['objective'] = 'binary:logistic'
-        self.refiner_params['num_class'] = None # 清除多分类参数
 
     def fit(self, X_train: np.ndarray, y_train: np.ndarray,
             feature_names: Optional[List[str]] = None,
@@ -56,33 +51,25 @@ class XGBoostIdentifier(XGBClassifier):
             y_sub_binary = (y_sub == c2).astype(int)
             
             # 初始化并训练精修模型 (使用原生XGB以避免递归调用父类逻辑)
-            # refiner_args = {k: v for k, v in self.refiner_params.items() 
-            #                if k in ['n_estimators', 'max_depth', 'learning_rate', 
-            #                         'subsample', 'colsample_bytree', 'gamma', 
-            #                         'reg_alpha', 'reg_lambda', 'n_jobs', 'random_state']}
+            # 从 refiner_params 中提取有效的 XGBoost 参数
+            refiner_args = {k: v for k, v in self.refiner_params.items() 
+                           if k in ['n_estimators', 'max_depth', 'learning_rate', 
+                                    'subsample', 'colsample_bytree', 'gamma', 
+                                    'reg_alpha', 'reg_lambda', 'min_child_weight',
+                                    'n_jobs', 'random_state']}
             
-            # refiner_args['max_depth'] = refiner_args.get('max_depth', 6) + 1 
-            
-            # 不用大分类器的参数，在单独二分类上要求完全不同
-            refiner_args = {
-                'max_depth': 6,          
-                'learning_rate': 0.02,    
-                'n_estimators': 500,      
-                'min_child_weight': 3,    
-                'reg_lambda': 5,         
-                'subsample': 0.7,
-                'colsample_bytree': 0.8,
-                'gamma': 0.1,
+            # 添加固定参数
+            refiner_args.update({
+                'random_state': self.seed,
                 'n_jobs': self.n_jobs,
-                'random_state': self.seed
-            }
-            self.refiner_model = xgb.XGBClassifier(
-                **refiner_args,
-                objective='binary:logistic',
-                eval_metric='logloss',
-                tree_method='hist',
-                device='cuda' if self.use_gpu else 'cpu'
-            )
+                'objective': 'binary:logistic',
+                'eval_metric': 'logloss',
+                'tree_method': 'hist',
+                'device': 'cuda' if self.use_gpu else 'cpu',
+                'verbosity': 0
+            })
+            
+            self.refiner_model = xgb.XGBClassifier(**refiner_args)
             
             self.refiner_model.fit(X_sub, y_sub_binary)
             
