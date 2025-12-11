@@ -2,7 +2,7 @@ class MLPConfig:
     hidden_layers = [512, 256, 128, 64, 32]
     dropout_rate = 0.3
     use_batchNorm = True
-    lr = 0.005
+    lr = 0.003
     epochs = 100
     batch_size = 512
     seed = 42
@@ -56,6 +56,6 @@ class Config:
     datasets = ['激光载荷', '供配电', '姿轨控']
     data_root = './data/'
     split_mode = 'file'  # 'file' 或 'dir'
-    result_dir = './result_12_9'  # 保存结果的根目录
+    result_dir = './result_best_new'  # 保存结果的根目录
     params_save_dir = './params' # 保存参数搜索和模型训练的结果
-    params_load_dir = './params_best'
+    params_load_dir = './Best_params' # 加载最佳参数的目录
